@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import re
 from collections import defaultdict
 from contextlib import suppress
 from hashlib import sha256
@@ -77,6 +76,19 @@ def model_group():
     return core_config.MODEL_GROUPS.get(settings.MODEL_GROUP)
 
 
+async def extract(model, samples):
+    response = await asyncio.wait_for(gen_openai_chat_response(
+        model=model.CHAT_MODEL,
+        messages=[
+            {"role": "system", "content": EXTRACTION_PROMPT},
+            {"role": "user", "content": json.dumps(list(samples.values()), ensure_ascii=False)},
+        ],
+        api_key=model.API_KEY, base_url=model.BASE_URL, proxy_url=model.CHAT_PROXY,
+        extra_body=model.EXTRA_BODY, max_tokens=2600, temperature=0.2, max_wait_time=60,
+    ), timeout=70)
+    return parse_candidates(response.response_content, samples)
+
+
 async def learn(chat_key):
     async with locks[chat_key]:
         state = await load(chat_key)
@@ -98,16 +110,7 @@ async def learn(chat_key):
     samples = build_samples(rows)
     candidates = {}
     if any(key > cursor for key in samples):
-        response = await asyncio.wait_for(gen_openai_chat_response(
-            model=model.CHAT_MODEL,
-            messages=[
-                {"role": "system", "content": EXTRACTION_PROMPT},
-                {"role": "user", "content": json.dumps(list(samples.values()), ensure_ascii=False)},
-            ],
-            api_key=model.API_KEY, base_url=model.BASE_URL, proxy_url=model.CHAT_PROXY,
-            max_tokens=2600, temperature=0.2, max_wait_time=60,
-        ), timeout=70)
-        candidates = parse_candidates(response.response_content, samples)
+        candidates = await extract(model, samples)
         candidates = {key: entry for key, entry in candidates.items() if max(entry["evidence"]) > cursor}
     async with locks[chat_key]:
         state = await load(chat_key)
