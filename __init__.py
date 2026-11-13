@@ -9,7 +9,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from nekro_agent.api.plugin import ConfigBase, NekroPlugin
+from nekro_agent.api.plugin import ConfigBase, ExtraField, NekroPlugin
 from nekro_agent.core.config import config as core_config
 from nekro_agent.models.db_chat_channel import DBChatChannel
 from nekro_agent.models.db_chat_message import DBChatMessage
@@ -28,14 +28,19 @@ plugin = NekroPlugin(
     module_name="group_evolution",
     author="JiaDodo",
     description="按群学习黑话和接梗方式，并把相关经验提供给主 Agent。",
-    version="0.1.0",
+    version="0.1.1",
     url="https://github.com/JiaDodo/nekro-plugin-group-evolution",
 )
 
 
 @plugin.mount_config()
 class EvolutionConfig(ConfigBase):
-    MODEL_GROUP: str = Field("", title="提炼模型组", description="填 Nekro 的聊天模型组名称。配置后，启用学习的群会把脱敏片段提交给该模型。")
+    MODEL_GROUP: str = Field(
+        "",
+        title="提炼模型组",
+        description="从 Nekro 已配置的聊天模型组中选择。启用学习的群会把脱敏片段提交给该模型。",
+        json_schema_extra=ExtraField(ref_model_groups=True, model_type="chat").model_dump(),
+    )
     INTERVAL_MINUTES: int = Field(60, ge=5, le=1440, title="学习间隔（分钟）")
     BATCH_SIZE: int = Field(160, ge=30, le=300, title="每批最多读取的消息数")
     AUTO_ACCEPT_TERMS: bool = Field(True, title="自动采纳证据充足的词义")
@@ -73,7 +78,8 @@ def human_messages(chat_key):
 
 
 def model_group():
-    return core_config.MODEL_GROUPS.get(settings.MODEL_GROUP)
+    group = core_config.MODEL_GROUPS.get(settings.MODEL_GROUP)
+    return group if group and group.MODEL_TYPE == "chat" else None
 
 
 async def extract(model, samples):
